@@ -25,34 +25,18 @@ ln -sf "$HOME/Developer/opencode-cmux/src/index.js" "$HOME/.config/opencode/plug
 ### Behavior
 
 - On `session.status` busy: sets a cmux status pill (`opencode`, `working`, bolt icon, blue color).
-- On permission requests: sets `waiting` status and sends a notification.
-- On question prompts: sets `question` status and sends a notification.
-- On primary `session.idle`: clears status pill and sends "Session complete" notification.
+- On permission requests: sets `waiting` status and sends a detailed "Needs your permission" notification.
+- On question prompts: sets `question` status and sends a detailed "Has a question" notification.
+- On primary `session.idle`: sends `Done: <session title>` with change summary when available.
 - On subagent `session.idle`: logs completion without desktop notification spam.
-- On `session.error`: clears status pill, sends an error notification, and writes an error log entry.
+- On `session.error`: sends `Error: <session title>` with error type/message and writes an error log entry.
 
 Idle completion notifications are suppressed while the agent is waiting for permission/question input.
 
-The plugin also writes timeline entries via `cmux log` for permission requests, questions, primary completions, subagent completions, and errors.
-Log verbosity is configurable through environment flags.
+The plugin writes timeline entries via `cmux log` for permission requests, questions, completions, and errors.
+The plugin uses built-in defaults and does not require runtime environment-variable configuration.
 
 The plugin no-ops when `cmux` is unavailable or `cmux ping` fails.
-
-### Optional environment variables
-
-- `CMUX_STATUS_KEY` (default: `opencode`)
-- `CMUX_STATUS_TEXT` (default: `working`)
-- `CMUX_STATUS_ICON` (default: `bolt`)
-- `CMUX_STATUS_COLOR` (default: `#007aff`)
-- `CMUX_WAITING_STATUS_TEXT` (default: `waiting`)
-- `CMUX_WAITING_STATUS_ICON` (default: `lock`)
-- `CMUX_WAITING_STATUS_COLOR` (default: `#ef4444`)
-- `CMUX_QUESTION_STATUS_TEXT` (default: `question`)
-- `CMUX_QUESTION_STATUS_ICON` (default: `help-circle`)
-- `CMUX_QUESTION_STATUS_COLOR` (default: `#a855f7`)
-- `CMUX_LOG_SOURCE` (default: `opencode`)
-- `CMUX_LOG_ENABLED` (default: `true`)
-- `CMUX_LOG_VERBOSITY` (default: `normal`; options: `silent`, `errors`, `normal`, `verbose`)
 
 ## Agent Skill (skills.sh)
 
