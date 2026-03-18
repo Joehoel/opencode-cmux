@@ -551,6 +551,58 @@ _cmux_int_clear_all() {
 }
 
 # ---------------------------------------------------------------------------
+# Apply current context: workspace title, pills, poller.
+# Called after repo/branch detection or branch change.
+# ---------------------------------------------------------------------------
+_cmux_int_apply_context() {
+  # Capture workspace ID for scoped cmux commands.
+  _cmux_int_workspace_id="${CMUX_WORKSPACE_ID:-}"
+
+  # Clear stale jira/pr pills if ticket or branch changed.
+  if [[ -n $_cmux_int_last_jira_pill ]]; then
+    _cmux_int_clear_status "jira"
+    _cmux_int_last_jira_pill=""
+  fi
+  if [[ -n $_cmux_int_last_pr_pill ]]; then
+    _cmux_int_clear_status "pr"
+    _cmux_int_last_pr_pill=""
+  fi
+  if [[ -n $_cmux_int_last_pipeline_pill ]]; then
+    _cmux_int_clear_status "pipeline"
+    _cmux_int_last_pipeline_pill=""
+  fi
+  if [[ -n $_cmux_int_last_pipeline_progress ]]; then
+    _cmux_int_ws_cmd clear-progress
+    _cmux_int_last_pipeline_progress=""
+  fi
+
+  # Set workspace title.
+  local ws_title
+  if [[ -n $_cmux_int_ticket ]]; then
+    local branch_desc="${_cmux_int_branch#*/}"       # Strip prefix (feature/, fix/, etc.)
+    branch_desc="${branch_desc#${_cmux_int_ticket}-}" # Strip ticket from desc.
+    branch_desc="${branch_desc//-/ }"                 # Dashes to spaces.
+    ws_title="${_cmux_int_ticket} · ${branch_desc}"
+  else
+    ws_title="${_cmux_int_repo_name} · ${_cmux_int_branch}"
+  fi
+
+  if [[ $ws_title != $_cmux_int_last_workspace_title ]]; then
+    _cmux_int_last_workspace_title="$ws_title"
+    _cmux_int_ws_cmd rename-workspace "${ws_title:0:60}"
+  fi
+
+  # Reset poller timestamps to re-fetch for new context.
+  _cmux_int_jira_last_fetch=0
+  _cmux_int_pr_last_fetch=0
+  _cmux_int_pipeline_last_fetch=0
+  _cmux_int_pipeline_status=""
+
+  # Start or restart background polling.
+  _cmux_int_start_poller
+}
+
+# ---------------------------------------------------------------------------
 # chpwd hook: detect repo, set workspace, start poller.
 # ---------------------------------------------------------------------------
 _cmux_int_chpwd() {
@@ -585,27 +637,7 @@ _cmux_int_chpwd() {
     _cmux_int_clear_all
   fi
 
-  # Capture workspace ID for scoped cmux commands.
-  _cmux_int_workspace_id="${CMUX_WORKSPACE_ID:-}"
-
-  # Set workspace title.
-  local ws_title
-  if [[ -n $_cmux_int_ticket ]]; then
-    local branch_desc="${_cmux_int_branch#*/}"       # Strip prefix (feature/, fix/, etc.)
-    branch_desc="${branch_desc#${_cmux_int_ticket}-}" # Strip ticket from desc.
-    branch_desc="${branch_desc//-/ }"                 # Dashes to spaces.
-    ws_title="${_cmux_int_ticket} · ${branch_desc}"
-  else
-    ws_title="${_cmux_int_repo_name} · ${_cmux_int_branch}"
-  fi
-
-  if [[ $ws_title != $_cmux_int_last_workspace_title ]]; then
-    _cmux_int_last_workspace_title="$ws_title"
-    _cmux_int_ws_cmd rename-workspace "${ws_title:0:60}"
-  fi
-
-  # Start background polling.
-  _cmux_int_start_poller
+  _cmux_int_apply_context
 }
 
 # ---------------------------------------------------------------------------
@@ -650,12 +682,8 @@ _cmux_int_precmd() {
       else
         _cmux_int_ticket=""
       fi
-      # Reset poller timestamps to re-fetch for new branch.
-      _cmux_int_jira_last_fetch=0
-      _cmux_int_pr_last_fetch=0
-      _cmux_int_pipeline_last_fetch=0
-      # Update workspace title.
-      _cmux_int_chpwd
+      # Update workspace title, pills, and poller for new branch.
+      _cmux_int_apply_context
     fi
   fi
 }
