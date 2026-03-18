@@ -545,6 +545,7 @@ _cmux_int_clear_all() {
   _cmux_int_last_pr_pill=""
   _cmux_int_last_pipeline_pill=""
   _cmux_int_last_pipeline_progress=""
+  _cmux_int_ws_cmd workspace-action --action clear-name
   _cmux_int_last_workspace_title=""
   _cmux_int_pipeline_status=""
   _cmux_int_workspace_id=""
