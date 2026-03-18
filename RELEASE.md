@@ -2,7 +2,7 @@
 
 This repo ships two artifacts:
 
-- npm package: `opencode-cmux` (OpenCode plugin)
+- npm package: `@joehoel/opencode-cmux` (OpenCode plugin)
 - Agent Skill: `skills/cmux`
 
 ## 1) Preflight checks
@@ -46,14 +46,14 @@ Install package in OpenCode config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-cmux"]
+  "plugin": ["@joehoel/opencode-cmux"]
 }
 ```
 
 Verify package metadata from npm:
 
 ```bash
-npm view opencode-cmux name version dist-tags.latest
+npm view @joehoel/opencode-cmux name version dist-tags.latest
 ```
 
 ## 4) Skill distribution verification
@@ -61,8 +61,8 @@ npm view opencode-cmux name version dist-tags.latest
 From a clean machine or environment:
 
 ```bash
-npx skills add joelkuijper/opencode-cmux --list
-npx skills add joelkuijper/opencode-cmux --skill cmux -a opencode -g -y
+npx skills add Joehoel/opencode-cmux --list
+npx skills add Joehoel/opencode-cmux --skill cmux -a opencode -g -y
 ```
 
 ## 5) Suggested release flow

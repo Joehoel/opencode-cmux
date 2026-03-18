@@ -1,5 +1,5 @@
 {
-  "name": "opencode-cmux",
+  "name": "@joehoel/opencode-cmux",
   "version": "0.1.0",
   "description": "OpenCode plugin for cmux sidebar status and notifications, plus a publishable cmux skill",
   "type": "module",
@@ -34,10 +34,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/joelkuijper/opencode-cmux.git"
+    "url": "git+https://github.com/Joehoel/opencode-cmux.git"
   },
   "bugs": {
-    "url": "https://github.com/joelkuijper/opencode-cmux/issues"
+    "url": "https://github.com/Joehoel/opencode-cmux/issues"
   },
-  "homepage": "https://github.com/joelkuijper/opencode-cmux#readme"
+  "homepage": "https://github.com/Joehoel/opencode-cmux#readme"
 }

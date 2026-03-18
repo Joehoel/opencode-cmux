@@ -2,7 +2,7 @@
 
 One repository for:
 
-- `opencode-cmux`: an OpenCode plugin that updates cmux sidebar status and sends desktop notifications.
+- `@joehoel/opencode-cmux`: an OpenCode plugin that updates cmux sidebar status and sends desktop notifications.
 - `cmux` skill: a publishable Agent Skill for controlling cmux from coding agents.
 
 ## OpenCode plugin (npm)
@@ -12,7 +12,7 @@ When published, add this plugin package in your OpenCode config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-cmux"]
+  "plugin": ["@joehoel/opencode-cmux"]
 }
 ```
 
@@ -50,7 +50,7 @@ npx skills add "$HOME/Developer/opencode-cmux" --skill cmux -a opencode -y
 Install from GitHub later:
 
 ```bash
-npx skills add joelkuijper/opencode-cmux --skill cmux -a opencode -y
+npx skills add Joehoel/opencode-cmux --skill cmux -a opencode -y
 ```
 
 ## Verify before publishing
@@ -66,7 +66,7 @@ npx skills add "$HOME/Developer/opencode-cmux" --list
 1. Push this repo to GitHub.
 2. Create npm access token and run `npm login`.
 3. Publish with `npm publish --access public`.
-4. Install with `plugin: ["opencode-cmux"]` in OpenCode.
-5. Let users install the skill via `npx skills add joelkuijper/opencode-cmux`.
+4. Install with `plugin: ["@joehoel/opencode-cmux"]` in OpenCode.
+5. Let users install the skill via `npx skills add Joehoel/opencode-cmux`.
 
 For a command-by-command release runbook, see `RELEASE.md`.
