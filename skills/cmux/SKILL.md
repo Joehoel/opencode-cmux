@@ -150,11 +150,6 @@ cmux browser surface:3 screenshot --out /tmp/dashboard.png
 - Browser command fails: confirm target is a browser surface using `cmux browser identify`.
 - No notification appears: verify macOS notification permissions for cmux.
 
-## OpenCode integration in this repo
-
-This repository includes a companion OpenCode plugin at `src/index.js`.
-It sets a sidebar status while sessions are busy and sends notifications on completion/error.
-
 ## References
 
 - CLI command reference: `references/cli-cheatsheet.md`
