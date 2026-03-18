@@ -7,6 +7,7 @@
 
 const STATUS_KEY = "opencode";
 const LOG_SOURCE = "opencode";
+const DEFAULT_WORKSPACE_KEY = "__current_workspace__";
 
 const STATUS_WORKING = { text: "working", icon: "bolt", color: "#007aff" };
 const STATUS_WAITING = { text: "waiting", icon: "lock", color: "#ef4444" };
@@ -16,15 +17,51 @@ async function safeRun(commandPromise) {
   await commandPromise.quiet().catch(() => {});
 }
 
-async function cmuxLog($, level, message) {
-  await safeRun($`cmux log --level ${level} --source ${LOG_SOURCE} -- ${message}`);
+function appendWorkspace(args, workspaceID) {
+  if (workspaceID) args.push("--workspace", workspaceID);
+  return args;
 }
 
-async function cmuxNotify($, { title, subtitle, body }) {
+function workspaceKey(workspaceID) {
+  return workspaceID ?? DEFAULT_WORKSPACE_KEY;
+}
+
+async function cmuxLog($, level, message, workspaceID) {
+  const args = appendWorkspace(["--level", level, "--source", LOG_SOURCE], workspaceID);
+  args.push("--", message);
+  await safeRun($`cmux log ${args}`);
+}
+
+async function cmuxNotify($, { title, subtitle, body, workspaceID }) {
   const args = ["--title", title];
   if (subtitle) args.push("--subtitle", subtitle);
   if (body) args.push("--body", body);
+  appendWorkspace(args, workspaceID);
   await safeRun($`cmux notify ${args}`);
+}
+
+async function setProgress($, ratio, label, workspaceID) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const normalized = Number(clamped.toFixed(2));
+  const args = [String(normalized)];
+  if (label) args.push("--label", label);
+  appendWorkspace(args, workspaceID);
+  await safeRun($`cmux set-progress ${args}`);
+}
+
+async function clearProgress($, workspaceID) {
+  const args = appendWorkspace([], workspaceID);
+  await safeRun($`cmux clear-progress ${args}`);
+}
+
+async function workspaceAction($, action, workspaceID) {
+  const args = appendWorkspace(["--action", action], workspaceID);
+  await safeRun($`cmux workspace-action ${args}`);
+}
+
+async function triggerFlash($, workspaceID) {
+  const args = appendWorkspace([], workspaceID);
+  await safeRun($`cmux trigger-flash ${args}`);
 }
 
 async function hasCmux($) {
@@ -103,10 +140,6 @@ function clearPendingRequestsBySession(requests, sessionID) {
       requests.delete(key);
     }
   }
-}
-
-function hasPendingInput(permissionRequests, questionRequests) {
-  return permissionRequests.size > 0 || questionRequests.size > 0;
 }
 
 function formatSummary(summary) {
@@ -197,41 +230,29 @@ function formatErrorDetail(error) {
   };
 }
 
-async function setStatus($, status) {
-  await safeRun(
-    $`cmux set-status ${STATUS_KEY} ${status.text} --icon ${status.icon} --color ${status.color}`,
+async function setStatus($, status, workspaceID) {
+  const args = appendWorkspace(
+    [STATUS_KEY, status.text, "--icon", status.icon, "--color", status.color],
+    workspaceID,
   );
+  await safeRun($`cmux set-status ${args}`);
 }
 
-async function setWorkingStatus($) {
-  await setStatus($, STATUS_WORKING);
+async function clearStatus($, workspaceID) {
+  const args = appendWorkspace([STATUS_KEY], workspaceID);
+  await safeRun($`cmux clear-status ${args}`);
 }
 
-async function setWaitingStatus($) {
-  await setStatus($, STATUS_WAITING);
+async function setWorkingStatus($, workspaceID) {
+  await setStatus($, STATUS_WORKING, workspaceID);
 }
 
-async function setQuestionStatus($) {
-  await setStatus($, STATUS_QUESTION);
+async function setWaitingStatus($, workspaceID) {
+  await setStatus($, STATUS_WAITING, workspaceID);
 }
 
-async function restoreStatus($, busySessions, pendingPermissions, pendingQuestions) {
-  if (pendingQuestions.size > 0) {
-    await setQuestionStatus($);
-    return;
-  }
-
-  if (pendingPermissions.size > 0) {
-    await setWaitingStatus($);
-    return;
-  }
-
-  if (busySessions.size > 0) {
-    await setWorkingStatus($);
-    return;
-  }
-
-  await safeRun($`cmux clear-status ${STATUS_KEY}`);
+async function setQuestionStatus($, workspaceID) {
+  await setStatus($, STATUS_QUESTION, workspaceID);
 }
 
 export const OpencodeCmuxPlugin = async ({ $, client }) => {
@@ -241,27 +262,149 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
   const pendingPermissions = new Map();
   const pendingQuestions = new Map();
   const sessionInfoCache = new Map();
+  const sessionWorkspaceByID = new Map();
+  const progressStateByWorkspace = new Map();
+  const unreadWorkspaces = new Set();
+
+  function workspaceForSession(sessionID) {
+    if (!sessionID) return undefined;
+    return sessionWorkspaceByID.get(sessionID);
+  }
+
+  function sessionBelongsToWorkspace(sessionID, workspaceID) {
+    const sessionWorkspaceID = workspaceForSession(sessionID);
+    if (workspaceID) return sessionWorkspaceID === workspaceID;
+    return sessionWorkspaceID === undefined;
+  }
+
+  function countBusyInWorkspace(workspaceID) {
+    let count = 0;
+    for (const sessionID of busySessions) {
+      if (sessionBelongsToWorkspace(sessionID, workspaceID)) count += 1;
+    }
+    return count;
+  }
+
+  function countPendingInWorkspace(requests, workspaceID) {
+    let count = 0;
+    for (const sessionID of requests.values()) {
+      if (sessionBelongsToWorkspace(sessionID, workspaceID)) count += 1;
+    }
+    return count;
+  }
+
+  function hasPendingInputInWorkspace(workspaceID) {
+    return (
+      countPendingInWorkspace(pendingPermissions, workspaceID) > 0 ||
+      countPendingInWorkspace(pendingQuestions, workspaceID) > 0
+    );
+  }
+
+  async function restoreStatusForWorkspace(workspaceID) {
+    if (countPendingInWorkspace(pendingQuestions, workspaceID) > 0) {
+      await setQuestionStatus($, workspaceID);
+      return;
+    }
+
+    if (countPendingInWorkspace(pendingPermissions, workspaceID) > 0) {
+      await setWaitingStatus($, workspaceID);
+      return;
+    }
+
+    if (countBusyInWorkspace(workspaceID) > 0) {
+      await setWorkingStatus($, workspaceID);
+      return;
+    }
+
+    await clearStatus($, workspaceID);
+  }
+
+  async function clearProgressForWorkspace(workspaceID) {
+    const key = workspaceKey(workspaceID);
+    if (!progressStateByWorkspace.has(key)) return;
+    await clearProgress($, workspaceID);
+    progressStateByWorkspace.delete(key);
+  }
+
+  async function updateProgressForWorkspace(workspaceID, todos) {
+    const key = workspaceKey(workspaceID);
+    const total = todos.length;
+
+    if (total === 0) {
+      await clearProgressForWorkspace(workspaceID);
+      return;
+    }
+
+    const completed = todos.filter((todo) => todo?.status === "completed").length;
+    const active = todos.filter((todo) => todo?.status === "in_progress").length;
+    const ratio = completed / total;
+    const label = `Tasks ${completed}/${total}${active > 0 ? ` · ${active} active` : ""}`;
+
+    const previous = progressStateByWorkspace.get(key);
+    if (previous && previous.label === label && Math.abs(previous.ratio - ratio) < 0.01) {
+      return;
+    }
+
+    await setProgress($, ratio, label, workspaceID);
+    progressStateByWorkspace.set(key, { ratio, label });
+  }
+
+  async function markWorkspaceUnread(workspaceID, { flash = false } = {}) {
+    const key = workspaceKey(workspaceID);
+    if (!unreadWorkspaces.has(key)) {
+      await workspaceAction($, "mark-unread", workspaceID);
+      unreadWorkspaces.add(key);
+    }
+
+    if (flash) {
+      await triggerFlash($, workspaceID);
+    }
+  }
+
+  async function markWorkspaceRead(workspaceID) {
+    const key = workspaceKey(workspaceID);
+    if (!unreadWorkspaces.has(key)) return;
+    await workspaceAction($, "mark-read", workspaceID);
+    unreadWorkspaces.delete(key);
+  }
 
   async function fetchSessionInfo(sessionID) {
-    if (!sessionID || !client?.session?.get) return null;
+    if (!sessionID) return null;
     if (sessionInfoCache.has(sessionID)) return sessionInfoCache.get(sessionID);
+
+    if (!client?.session?.get) {
+      return null;
+    }
 
     try {
       const result = await client.session.get({ path: { id: sessionID } });
       const data = result?.data;
       if (!data) return null;
 
+      const workspaceID = stringValue(data.workspaceID);
       const info = {
         title: truncate(stringValue(data.title) ?? sessionID, 90),
         isSubagent: stringValue(data.parentID) !== undefined,
         summary: formatSummary(data.summary),
+        workspaceID,
       };
 
       sessionInfoCache.set(sessionID, info);
+      sessionWorkspaceByID.set(sessionID, workspaceID);
       return info;
     } catch {
       return null;
     }
+  }
+
+  async function onTodoUpdated(properties) {
+    const sessionID = stringValue(properties?.sessionID);
+    if (!sessionID) return;
+
+    const sessionInfo = await fetchSessionInfo(sessionID);
+    const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
+    const todos = Array.isArray(properties?.todos) ? properties.todos : [];
+    await updateProgressForWorkspace(workspaceID, todos);
   }
 
   async function onPermissionRequested(properties) {
@@ -272,15 +415,18 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
 
     const sessionInfo = await fetchSessionInfo(sessionID);
     const sessionLabel = sessionInfo?.title ?? sessionID ?? "OpenCode session";
+    const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
     const detail = formatPermissionDetail(properties);
 
-    await setWaitingStatus($);
+    await setWaitingStatus($, workspaceID);
     await cmuxNotify($, {
       title: "Needs your permission",
       subtitle: sessionLabel,
       body: detail,
+      workspaceID,
     });
-    await cmuxLog($, "info", `Permission requested in ${sessionLabel}: ${detail}`);
+    await cmuxLog($, "info", `Permission requested in ${sessionLabel}: ${detail}`, workspaceID);
+    await markWorkspaceUnread(workspaceID, { flash: true });
   }
 
   async function onQuestionAsked(properties) {
@@ -291,15 +437,18 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
 
     const sessionInfo = await fetchSessionInfo(sessionID);
     const sessionLabel = sessionInfo?.title ?? sessionID ?? "OpenCode session";
+    const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
     const question = formatQuestionDetail(properties);
 
-    await setQuestionStatus($);
+    await setQuestionStatus($, workspaceID);
     await cmuxNotify($, {
       title: "Has a question",
       subtitle: `${sessionLabel} · ${question.header}`,
       body: question.body,
+      workspaceID,
     });
-    await cmuxLog($, "info", `Question in ${sessionLabel}: ${question.header}`);
+    await cmuxLog($, "info", `Question in ${sessionLabel}: ${question.header}`, workspaceID);
+    await markWorkspaceUnread(workspaceID, { flash: true });
   }
 
   return {
@@ -310,17 +459,25 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
     event: async ({ event }) => {
       if (eventIsBusy(event)) {
         const sessionID = eventSessionID(event);
-        const wasEmpty = busySessions.size === 0;
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
+        const wasBusy = countBusyInWorkspace(workspaceID) > 0;
         if (sessionID) busySessions.add(sessionID);
 
-        if (wasEmpty && !hasPendingInput(pendingPermissions, pendingQuestions)) {
-          await setWorkingStatus($);
+        if (!wasBusy && !hasPendingInputInWorkspace(workspaceID)) {
+          await setWorkingStatus($, workspaceID);
+        }
+
+        if (!hasPendingInputInWorkspace(workspaceID)) {
+          await markWorkspaceRead(workspaceID);
         }
         return;
       }
 
       if (eventIsRetry(event)) {
         const sessionID = eventSessionID(event) ?? "session";
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
         const attempt = event?.properties?.status?.attempt;
         const message = stringValue(event?.properties?.status?.message);
         const detail = [
@@ -330,30 +487,41 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
         ]
           .filter(Boolean)
           .join(" ");
-        await cmuxLog($, "warning", detail);
+        await cmuxLog($, "warning", detail, workspaceID);
+        return;
+      }
+
+      if (event.type === "todo.updated") {
+        await onTodoUpdated(event.properties);
         return;
       }
 
       if (event.type === "session.idle") {
         const sessionID = eventSessionID(event);
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
         if (sessionID) busySessions.delete(sessionID);
         else busySessions.clear();
 
-        await restoreStatus($, busySessions, pendingPermissions, pendingQuestions);
+        await restoreStatusForWorkspace(workspaceID);
 
-        if (hasPendingInput(pendingPermissions, pendingQuestions)) {
+        if (countBusyInWorkspace(workspaceID) === 0) {
+          await clearProgressForWorkspace(workspaceID);
+        }
+
+        if (hasPendingInputInWorkspace(workspaceID)) {
           return;
         }
 
-        const sessionInfo = await fetchSessionInfo(sessionID);
         const label = sessionInfo?.title ?? sessionID ?? "session";
         const summary = sessionInfo?.summary;
 
         if (sessionInfo?.isSubagent) {
           await cmuxLog(
-            $, 
+            $,
             "info",
             summary ? `Subagent finished: ${label} (${summary})` : `Subagent finished: ${label}`,
+            workspaceID,
           );
           return;
         }
@@ -362,22 +530,33 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
           title: `Done: ${label}`,
           subtitle: summary ?? "Session complete",
           body: "OpenCode is idle and waiting for your next prompt.",
+          workspaceID,
         });
-        await cmuxLog($, "success", summary ? `Done: ${label} (${summary})` : `Done: ${label}`);
+        await cmuxLog(
+          $,
+          "success",
+          summary ? `Done: ${label} (${summary})` : `Done: ${label}`,
+          workspaceID,
+        );
         return;
       }
 
       if (event.type === "session.error") {
         const sessionID = eventSessionID(event);
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
         if (sessionID) busySessions.delete(sessionID);
         else busySessions.clear();
 
         clearPendingRequestsBySession(pendingPermissions, sessionID);
         clearPendingRequestsBySession(pendingQuestions, sessionID);
 
-        await restoreStatus($, busySessions, pendingPermissions, pendingQuestions);
+        await restoreStatusForWorkspace(workspaceID);
 
-        const sessionInfo = await fetchSessionInfo(sessionID);
+        if (countBusyInWorkspace(workspaceID) === 0) {
+          await clearProgressForWorkspace(workspaceID);
+        }
+
         const label = sessionInfo?.title ?? sessionID ?? "session";
         const detail = formatErrorDetail(event?.properties?.error);
 
@@ -385,8 +564,10 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
           title: `Error: ${label}`,
           subtitle: detail.subtitle,
           body: detail.body,
+          workspaceID,
         });
-        await cmuxLog($, "error", `Error in ${label}: ${detail.body}`);
+        await cmuxLog($, "error", `Error in ${label}: ${detail.body}`, workspaceID);
+        await markWorkspaceUnread(workspaceID, { flash: true });
         return;
       }
 
@@ -398,17 +579,22 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
       if (event.type === "permission.replied") {
         const key = requestKey("permission", event.properties);
         const sessionID = eventSessionID(event);
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
 
         const removed = clearPendingRequest(pendingPermissions, key);
         if (!removed && sessionID) {
           clearPendingRequestsBySession(pendingPermissions, sessionID);
         }
 
-        await restoreStatus($, busySessions, pendingPermissions, pendingQuestions);
+        await restoreStatusForWorkspace(workspaceID);
 
-        const sessionInfo = await fetchSessionInfo(sessionID);
+        if (!hasPendingInputInWorkspace(workspaceID) && countBusyInWorkspace(workspaceID) > 0) {
+          await markWorkspaceRead(workspaceID);
+        }
+
         const label = sessionInfo?.title ?? sessionID ?? "session";
-        await cmuxLog($, "info", `Permission resolved in ${label}`);
+        await cmuxLog($, "info", `Permission resolved in ${label}`, workspaceID);
         return;
       }
 
@@ -420,17 +606,22 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
       if (event.type === "question.replied" || event.type === "question.rejected") {
         const key = requestKey("question", event.properties);
         const sessionID = eventSessionID(event);
+        const sessionInfo = await fetchSessionInfo(sessionID);
+        const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
 
         const removed = clearPendingRequest(pendingQuestions, key);
         if (!removed && sessionID) {
           clearPendingRequestsBySession(pendingQuestions, sessionID);
         }
 
-        await restoreStatus($, busySessions, pendingPermissions, pendingQuestions);
+        await restoreStatusForWorkspace(workspaceID);
 
-        const sessionInfo = await fetchSessionInfo(sessionID);
+        if (!hasPendingInputInWorkspace(workspaceID) && countBusyInWorkspace(workspaceID) > 0) {
+          await markWorkspaceRead(workspaceID);
+        }
+
         const label = sessionInfo?.title ?? sessionID ?? "session";
-        await cmuxLog($, "info", `Question resolved in ${label}`);
+        await cmuxLog($, "info", `Question resolved in ${label}`, workspaceID);
       }
     },
   };

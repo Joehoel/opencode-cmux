@@ -25,15 +25,18 @@ ln -sf "$HOME/Developer/opencode-cmux/src/index.js" "$HOME/.config/opencode/plug
 ### Behavior
 
 - On `session.status` busy: sets a cmux status pill (`opencode`, `working`, bolt icon, blue color).
+- On `todo.updated`: drives the cmux sidebar progress bar (`Tasks x/y`) and clears it when work finishes.
 - On permission requests: sets `waiting` status and sends a detailed "Needs your permission" notification.
 - On question prompts: sets `question` status and sends a detailed "Has a question" notification.
 - On primary `session.idle`: sends `Done: <session title>` with change summary when available.
 - On subagent `session.idle`: logs completion without desktop notification spam.
 - On `session.error`: sends `Error: <session title>` with error type/message and writes an error log entry.
+- On permission/question/error: marks the workspace as unread and triggers flash; it marks read again when active work resumes.
 
 Idle completion notifications are suppressed while the agent is waiting for permission/question input.
 
 The plugin writes timeline entries via `cmux log` for permission requests, questions, completions, and errors.
+When session workspace IDs are available, metadata updates are targeted to the correct cmux workspace.
 The plugin uses built-in defaults and does not require runtime environment-variable configuration.
 
 The plugin no-ops when `cmux` is unavailable or `cmux ping` fails.
