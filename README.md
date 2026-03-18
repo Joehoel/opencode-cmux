@@ -28,10 +28,11 @@ ln -sf "$HOME/Developer/opencode-cmux/src/index.js" "$HOME/.config/opencode/plug
 - On `todo.updated`: drives the cmux sidebar progress bar (`Tasks x/y`) and clears it when work finishes.
 - On permission requests: sets `waiting` status and sends a detailed "Needs your permission" notification.
 - On question prompts: sets `question` status and sends a detailed "Has a question" notification.
-- On primary `session.idle`: sends `Done: <session title>` with change summary when available.
+- On primary `session.idle`: sends `Done: <session title>` with change summary when available, except plan mode where diff summaries are hidden.
 - On subagent `session.idle`: logs completion without desktop notification spam.
-- On `session.error`: sends `Error: <session title>` with error type/message and writes an error log entry.
+- On `session.error`: sends `Error: <session title>` with error type/message (timestamp noise stripped) and writes an error log entry.
 - On permission/question/error: marks the workspace as unread and triggers flash; it marks read again when active work resumes.
+- If the same session resumes busy after an error, it logs a recovery event and clears unread attention state.
 
 Idle completion notifications are suppressed while the agent is waiting for permission/question input.
 

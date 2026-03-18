@@ -94,6 +94,56 @@ function pluralize(word, count) {
   return count === 1 ? word : `${word}s`;
 }
 
+function stripIsoTimestampSuffix(value) {
+  return value
+    .replace(/\s-\s\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u, "")
+    .trim();
+}
+
+function sanitizeSessionTitle(value) {
+  const text = stringValue(value);
+  if (!text) return undefined;
+  return truncate(stripIsoTimestampSuffix(text), 90);
+}
+
+function sanitizeErrorMessage(value) {
+  const text = stringValue(value);
+  if (!text) return undefined;
+
+  const withoutTimestamp = text
+    .replace(
+      /^\s*\[?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]?\s*(?:-|:)\s*/u,
+      "",
+    )
+    .trim();
+
+  const withoutErrorPrefix = withoutTimestamp.replace(/^\s*error:\s*/iu, "").trim();
+  return truncate(withoutErrorPrefix || withoutTimestamp || text);
+}
+
+function normalizeMode(value) {
+  const text = stringValue(value);
+  return text ? text.toLowerCase() : undefined;
+}
+
+function isPlanMode(value) {
+  const normalized = normalizeMode(value);
+  if (!normalized) return false;
+  return /\bplan\b/u.test(normalized);
+}
+
+function titleIndicatesPlan(title) {
+  return /^\s*plan\b/iu.test(title ?? "");
+}
+
+function summaryForCompletion(summary, mode, title) {
+  const text = stringValue(summary);
+  if (!text) return undefined;
+  if (isPlanMode(mode) || titleIndicatesPlan(title)) return undefined;
+  if (/^0 files? changed(?:\s+\(\+0\/-0\))?$/iu.test(text)) return undefined;
+  return text;
+}
+
 function eventSessionID(event) {
   return event?.properties?.sessionID;
 }
@@ -214,10 +264,11 @@ function formatQuestionDetail(properties) {
 
 function formatErrorDetail(error) {
   const name = stringValue(error?.name);
-  const message =
+  const rawMessage =
     stringValue(error?.data?.message) ??
     stringValue(error?.message) ??
     "Check OpenCode output for details.";
+  const message = sanitizeErrorMessage(rawMessage) ?? "Check OpenCode output for details.";
   const statusCode = Number.isFinite(error?.data?.statusCode)
     ? `HTTP ${error.data.statusCode}`
     : undefined;
@@ -226,7 +277,7 @@ function formatErrorDetail(error) {
 
   return {
     subtitle,
-    body: truncate(message),
+    body: message,
   };
 }
 
@@ -263,6 +314,9 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
   const pendingQuestions = new Map();
   const sessionInfoCache = new Map();
   const sessionWorkspaceByID = new Map();
+  const sessionModeByID = new Map();
+  const errorStateBySession = new Map();
+  const errorStateByWorkspace = new Map();
   const progressStateByWorkspace = new Map();
   const unreadWorkspaces = new Set();
 
@@ -383,7 +437,7 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
 
       const workspaceID = stringValue(data.workspaceID);
       const info = {
-        title: truncate(stringValue(data.title) ?? sessionID, 90),
+        title: sanitizeSessionTitle(stringValue(data.title) ?? sessionID) ?? sessionID,
         isSubagent: stringValue(data.parentID) !== undefined,
         summary: formatSummary(data.summary),
         workspaceID,
@@ -451,18 +505,91 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
     await markWorkspaceUnread(workspaceID, { flash: true });
   }
 
+  function consumeRecoveryLabel(sessionID, workspaceID) {
+    let recoveredLabel;
+
+    if (sessionID && errorStateBySession.has(sessionID)) {
+      recoveredLabel = errorStateBySession.get(sessionID)?.label;
+      errorStateBySession.delete(sessionID);
+    }
+
+    const workspaceState = errorStateByWorkspace.get(workspaceKey(workspaceID));
+    if (workspaceState) {
+      recoveredLabel = recoveredLabel ?? workspaceState.label;
+      errorStateByWorkspace.delete(workspaceKey(workspaceID));
+
+      if (workspaceState.sessionID) {
+        errorStateBySession.delete(workspaceState.sessionID);
+      }
+    }
+
+    return recoveredLabel;
+  }
+
+  function recordErrorState(sessionID, workspaceID, label) {
+    errorStateByWorkspace.set(workspaceKey(workspaceID), {
+      label,
+      sessionID,
+    });
+
+    if (sessionID) {
+      errorStateBySession.set(sessionID, {
+        label,
+        workspaceID,
+      });
+    }
+  }
+
+  function clearSessionCaches(sessionID) {
+    if (!sessionID) return;
+
+    sessionInfoCache.delete(sessionID);
+    sessionWorkspaceByID.delete(sessionID);
+    sessionModeByID.delete(sessionID);
+    busySessions.delete(sessionID);
+    errorStateBySession.delete(sessionID);
+    clearPendingRequestsBySession(pendingPermissions, sessionID);
+    clearPendingRequestsBySession(pendingQuestions, sessionID);
+  }
+
   return {
     "permission.ask": async (input) => {
       await onPermissionRequested(input);
     },
 
     event: async ({ event }) => {
+      if (event.type === "message.updated") {
+        const info = event?.properties?.info;
+        const sessionID = stringValue(info?.sessionID);
+        if (!sessionID) return;
+
+        if (info?.role === "assistant") {
+          const mode = normalizeMode(info?.mode);
+          if (mode) {
+            sessionModeByID.set(sessionID, mode);
+          }
+        }
+        return;
+      }
+
+      if (event.type === "session.deleted") {
+        const sessionID = stringValue(event?.properties?.info?.id);
+        clearSessionCaches(sessionID);
+        return;
+      }
+
       if (eventIsBusy(event)) {
         const sessionID = eventSessionID(event);
         const sessionInfo = await fetchSessionInfo(sessionID);
         const workspaceID = sessionInfo?.workspaceID ?? workspaceForSession(sessionID);
+        const label = sessionInfo?.title ?? sessionID ?? "session";
         const wasBusy = countBusyInWorkspace(workspaceID) > 0;
         if (sessionID) busySessions.add(sessionID);
+
+        const recoveredLabel = consumeRecoveryLabel(sessionID, workspaceID);
+        if (recoveredLabel) {
+          await cmuxLog($, "success", `Recovered: ${label}`, workspaceID);
+        }
 
         if (!wasBusy && !hasPendingInputInWorkspace(workspaceID)) {
           await setWorkingStatus($, workspaceID);
@@ -514,7 +641,8 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
         }
 
         const label = sessionInfo?.title ?? sessionID ?? "session";
-        const summary = sessionInfo?.summary;
+        const mode = sessionID ? sessionModeByID.get(sessionID) : undefined;
+        const summary = summaryForCompletion(sessionInfo?.summary, mode, label);
 
         if (sessionInfo?.isSubagent) {
           await cmuxLog(
@@ -559,6 +687,8 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
 
         const label = sessionInfo?.title ?? sessionID ?? "session";
         const detail = formatErrorDetail(event?.properties?.error);
+
+        recordErrorState(sessionID, workspaceID, label);
 
         await cmuxNotify($, {
           title: `Error: ${label}`,
