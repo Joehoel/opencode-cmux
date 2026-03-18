@@ -43,6 +43,7 @@ typeset -g  _cmux_int_ticket=""
 typeset -g  _cmux_int_remote_url=""
 typeset -g  _cmux_int_az_repo=""
 typeset -g  _cmux_int_main_branch=""
+typeset -g  _cmux_int_workspace_id=""
 
 # Last-sent values for dedup.
 typeset -g  _cmux_int_last_jira_pill=""
@@ -82,15 +83,29 @@ _cmux_int_cache_fresh() {
 
 _cmux_int_set_status() {
   local key=$1 text=$2 icon=$3 color=$4
-  _cmux_int_safe cmux set-status "$key" "$text" --icon "$icon" --color "$color"
+  local -a args=(set-status "$key" "$text" --icon "$icon" --color "$color")
+  [[ -n $_cmux_int_workspace_id ]] && args+=(--workspace "$_cmux_int_workspace_id")
+  _cmux_int_safe cmux "${args[@]}"
 }
 
 _cmux_int_clear_status() {
-  _cmux_int_safe cmux clear-status "$1"
+  local -a args=(clear-status "$1")
+  [[ -n $_cmux_int_workspace_id ]] && args+=(--workspace "$_cmux_int_workspace_id")
+  _cmux_int_safe cmux "${args[@]}"
 }
 
 _cmux_int_log() {
-  _cmux_int_safe cmux log --level "$1" --source "shell" -- "$2"
+  local -a args=(log --level "$1" --source "shell")
+  [[ -n $_cmux_int_workspace_id ]] && args+=(--workspace "$_cmux_int_workspace_id")
+  args+=(-- "$2")
+  _cmux_int_safe cmux "${args[@]}"
+}
+
+# Workspace-scoped cmux command wrapper.
+_cmux_int_ws_cmd() {
+  local -a args=("$@")
+  [[ -n $_cmux_int_workspace_id ]] && args+=(--workspace "$_cmux_int_workspace_id")
+  _cmux_int_safe cmux "${args[@]}"
 }
 
 # ---------------------------------------------------------------------------
@@ -345,7 +360,7 @@ _cmux_int_async_callback() {
             _cmux_int_last_pipeline_pill=""
             _cmux_int_last_pipeline_progress=""
             _cmux_int_clear_status "pipeline"
-            _cmux_int_safe cmux clear-progress
+            _cmux_int_ws_cmd clear-progress
           fi
           _cmux_int_pipeline_status=""
         else
@@ -377,7 +392,7 @@ _cmux_int_async_callback() {
                 local progress_text="Pipeline ${completed}/${total} jobs"
                 if [[ $progress_text != $_cmux_int_last_pipeline_progress ]]; then
                   _cmux_int_last_pipeline_progress="$progress_text"
-                  _cmux_int_safe cmux set-progress "$ratio" --label "$progress_text"
+                  _cmux_int_ws_cmd set-progress "$ratio" --label "$progress_text"
                 fi
               fi
               ;;
@@ -392,9 +407,9 @@ _cmux_int_async_callback() {
                   pill_text="Pipeline · failed"
                   icon="x"
                   color="#ef4444"
-                  _cmux_int_safe cmux notify --title "Pipeline failed" --body "${pipeline_name:-Build}"
-                  _cmux_int_safe cmux workspace-action --action mark-unread
-                  _cmux_int_safe cmux trigger-flash
+                  _cmux_int_ws_cmd notify --title "Pipeline failed" --body "${pipeline_name:-Build}"
+                  _cmux_int_ws_cmd workspace-action --action mark-unread
+                  _cmux_int_ws_cmd trigger-flash
                   _cmux_int_log "error" "Pipeline failed: ${pipeline_name:-Build} (#${run_id})"
                   ;;
                 canceled)
@@ -412,7 +427,7 @@ _cmux_int_async_callback() {
               # Clear progress bar when pipeline finishes.
               if [[ -n $_cmux_int_last_pipeline_progress ]]; then
                 _cmux_int_last_pipeline_progress=""
-                _cmux_int_safe cmux clear-progress
+                _cmux_int_ws_cmd clear-progress
               fi
               ;;
             *)
@@ -524,7 +539,7 @@ _cmux_int_clear_all() {
   [[ -n $_cmux_int_last_jira_pill ]]     && _cmux_int_clear_status "jira"
   [[ -n $_cmux_int_last_pr_pill ]]        && _cmux_int_clear_status "pr"
   [[ -n $_cmux_int_last_pipeline_pill ]]  && _cmux_int_clear_status "pipeline"
-  [[ -n $_cmux_int_last_pipeline_progress ]] && _cmux_int_safe cmux clear-progress
+  [[ -n $_cmux_int_last_pipeline_progress ]] && _cmux_int_ws_cmd clear-progress
 
   _cmux_int_last_jira_pill=""
   _cmux_int_last_pr_pill=""
@@ -532,6 +547,7 @@ _cmux_int_clear_all() {
   _cmux_int_last_pipeline_progress=""
   _cmux_int_last_workspace_title=""
   _cmux_int_pipeline_status=""
+  _cmux_int_workspace_id=""
 }
 
 # ---------------------------------------------------------------------------
@@ -569,6 +585,9 @@ _cmux_int_chpwd() {
     _cmux_int_clear_all
   fi
 
+  # Capture workspace ID for scoped cmux commands.
+  _cmux_int_workspace_id="${CMUX_WORKSPACE_ID:-}"
+
   # Set workspace title.
   local ws_title
   if [[ -n $_cmux_int_ticket ]]; then
@@ -582,7 +601,7 @@ _cmux_int_chpwd() {
 
   if [[ $ws_title != $_cmux_int_last_workspace_title ]]; then
     _cmux_int_last_workspace_title="$ws_title"
-    _cmux_int_safe cmux rename-workspace "${ws_title:0:60}"
+    _cmux_int_ws_cmd rename-workspace "${ws_title:0:60}"
   fi
 
   # Start background polling.
