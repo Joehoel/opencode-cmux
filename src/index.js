@@ -309,6 +309,10 @@ async function setQuestionStatus($, workspaceID) {
 export const OpencodeCmuxPlugin = async ({ $, client }) => {
   if (!(await hasCmux($))) return {};
 
+  // Startup cleanup: clear any stale state from a previous crashed/restarted run.
+  await safeRun($`cmux clear-status ${STATUS_KEY}`);
+  await safeRun($`cmux clear-progress`);
+
   const busySessions = new Set();
   const pendingPermissions = new Map();
   const pendingQuestions = new Map();
@@ -592,6 +596,9 @@ export const OpencodeCmuxPlugin = async ({ $, client }) => {
         }
 
         if (!wasBusy && !hasPendingInputInWorkspace(workspaceID)) {
+          // Fresh start: clear stale log entries from previous session.
+          const args = appendWorkspace([], workspaceID);
+          await safeRun($`cmux clear-log ${args}`);
           await setWorkingStatus($, workspaceID);
         }
 
