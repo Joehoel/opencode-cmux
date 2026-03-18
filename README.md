@@ -5,18 +5,6 @@ One repository for:
 - `opencode-cmux`: an OpenCode plugin that updates cmux sidebar status and sends desktop notifications.
 - `cmux` skill: a publishable Agent Skill for controlling cmux from coding agents.
 
-## Repository layout
-
-```text
-opencode-cmux/
-├── src/index.js                  # npm plugin entry
-└── skills/cmux/
-    ├── SKILL.md
-    └── references/
-        ├── browser-automation.md
-        └── cli-cheatsheet.md
-```
-
 ## OpenCode plugin (npm)
 
 When published, add this plugin package in your OpenCode config:
