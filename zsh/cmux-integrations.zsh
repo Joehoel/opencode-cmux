@@ -165,17 +165,6 @@ _cmux_int_detect_repo() {
 }
 
 # ---------------------------------------------------------------------------
-# Short repo label for status pill.
-# ---------------------------------------------------------------------------
-_cmux_int_repo_label() {
-  case "$_cmux_int_repo_name" in
-    *react-native*) print "RN" ;;
-    *next*)         print "Next" ;;
-    *)              print "${_cmux_int_repo_name:0:20}" ;;
-  esac
-}
-
-# ---------------------------------------------------------------------------
 # Async worker: fetch jobs (these run in background workers)
 # ---------------------------------------------------------------------------
 
@@ -537,9 +526,6 @@ _cmux_int_clear_all() {
   [[ -n $_cmux_int_last_pipeline_pill ]]  && _cmux_int_clear_status "pipeline"
   [[ -n $_cmux_int_last_pipeline_progress ]] && _cmux_int_safe cmux clear-progress
 
-  _cmux_int_clear_status "repo"
-  _cmux_int_clear_status "cmd"
-
   _cmux_int_last_jira_pill=""
   _cmux_int_last_pr_pill=""
   _cmux_int_last_pipeline_pill=""
@@ -583,10 +569,6 @@ _cmux_int_chpwd() {
     _cmux_int_clear_all
   fi
 
-  # Set repo status pill.
-  local repo_label=$(_cmux_int_repo_label)
-  _cmux_int_set_status "repo" "$repo_label" "folder-git" "#6b7280"
-
   # Set workspace title.
   local ws_title
   if [[ -n $_cmux_int_ticket ]]; then
@@ -595,7 +577,7 @@ _cmux_int_chpwd() {
     branch_desc="${branch_desc//-/ }"                 # Dashes to spaces.
     ws_title="${_cmux_int_ticket} · ${branch_desc}"
   else
-    ws_title="${repo_label} · ${_cmux_int_branch}"
+    ws_title="${_cmux_int_repo_name} · ${_cmux_int_branch}"
   fi
 
   if [[ $ws_title != $_cmux_int_last_workspace_title ]]; then
@@ -617,15 +599,6 @@ _cmux_int_preexec() {
 
 _cmux_int_precmd() {
   local exit_code=$?
-
-  # Exit status pill (only inside a git repo to avoid clutter).
-  if [[ -n $_cmux_int_repo_root ]]; then
-    if (( exit_code == 0 )); then
-      _cmux_int_set_status "cmd" "ok" "check" "#22c55e"
-    else
-      _cmux_int_set_status "cmd" "exit $exit_code" "x" "#ef4444"
-    fi
-  fi
 
   # Long-running command notification.
   if (( _cmux_int_cmd_start > 0 )); then

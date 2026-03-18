@@ -24,13 +24,11 @@ Restart your shell or `source ~/.zshrc`.
 | Feature | Trigger | What it does |
 |---|---|---|
 | Workspace rename | `cd` into a git repo | Names workspace after Jira ticket + description |
-| Repo pill | `cd` into a git repo | Shows `RN`, `Next`, or repo name in sidebar |
 | Jira ticket pill | Branch has `COAP-1234` etc. | Shows ticket key + status (polls every 10 min) |
 | PR status pill | Azure DevOps PR exists for branch | Shows `PR #1234 · 1/2 approved` (polls every 2 min) |
 | Pipeline progress | Pipeline running for branch | Shows progress bar + status pill (polls every 30s while active) |
 | Pipeline failure notify | Pipeline fails | Desktop notification + workspace flash |
 | Command timer | Any command > 5s | Desktop notification with duration |
-| Exit status pill | Every command | Green check or red X in sidebar |
 | Branch change detect | `git checkout`, `git switch` | Re-fetches Jira/PR/pipeline for new branch |
 | Cleanup on leave | `cd` out of repo or close shell | Clears all pills, progress, poller |
 
