@@ -25,8 +25,12 @@ ln -sf "$HOME/Developer/opencode-cmux/src/index.js" "$HOME/.config/opencode/plug
 ### Behavior
 
 - On `session.status` busy: sets a cmux status pill (`opencode`, `working`, bolt icon, blue color).
+- On permission requests: sets `waiting` status and sends a notification.
+- On question prompts: sets `question` status and sends a notification.
 - On `session.idle`: clears status pill and sends "Session complete" notification.
 - On `session.error`: clears status pill and sends "Session errored" notification.
+
+Idle completion notifications are suppressed while the agent is waiting for permission/question input.
 
 The plugin no-ops when `cmux` is unavailable or `cmux ping` fails.
 
@@ -36,6 +40,12 @@ The plugin no-ops when `cmux` is unavailable or `cmux ping` fails.
 - `CMUX_STATUS_TEXT` (default: `working`)
 - `CMUX_STATUS_ICON` (default: `bolt`)
 - `CMUX_STATUS_COLOR` (default: `#007aff`)
+- `CMUX_WAITING_STATUS_TEXT` (default: `waiting`)
+- `CMUX_WAITING_STATUS_ICON` (default: `lock`)
+- `CMUX_WAITING_STATUS_COLOR` (default: `#ef4444`)
+- `CMUX_QUESTION_STATUS_TEXT` (default: `question`)
+- `CMUX_QUESTION_STATUS_ICON` (default: `help-circle`)
+- `CMUX_QUESTION_STATUS_COLOR` (default: `#a855f7`)
 
 ## Agent Skill (skills.sh)
 
