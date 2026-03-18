@@ -1,0 +1,43 @@
+{
+  "name": "opencode-cmux",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for cmux sidebar status and notifications, plus a publishable cmux skill",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "skills/cmux",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check src/index.js",
+    "pack:dry-run": "npm pack --dry-run",
+    "prepublishOnly": "npm run check"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "cmux",
+    "agent-skill",
+    "notifications"
+  ],
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joelkuijper/opencode-cmux.git"
+  },
+  "bugs": {
+    "url": "https://github.com/joelkuijper/opencode-cmux/issues"
+  },
+  "homepage": "https://github.com/joelkuijper/opencode-cmux#readme"
+}
